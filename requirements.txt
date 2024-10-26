@@ -3,4 +3,4 @@ pandas
 numpy
 joblib
 setuptools
-scikit-learn==1.2.1  # Version used to train the model
+scikit-learn
