@@ -2,6 +2,7 @@ import streamlit as st
 import joblib
 import numpy as np
 import pandas as pd
+import os
 from sklearn.preprocessing import LabelEncoder
 
 # Create a dictionary of agencies and their corresponding values
@@ -96,6 +97,132 @@ CLUSTER_DESCRIPTIONS = {
         "income": "$1,306.31",
         "visits": 2.14,
         "key_obs": "Moderate age, moderate income, higher disability"
+    }
+}
+
+GROUP_INFO = {
+    "Very High": {
+        "size": "16.3%",
+        "visits": {"avg": 5.0, "range": "3.4-13.0"},
+        "demographics": {
+            "female": "73.6%",
+            "white": "32.5%",
+            "unknown": "24.9%",
+            "black": "20.9%",
+            "disability": "40.1%",
+            "disability_veteran": "43.9%"
+        },
+        "household": "3.8 members (22% above avg)",
+        "income": "$1,524 (20% above avg)",
+        "key_characteristics": [
+            "Highest visit frequency (5 visits/month)",
+            "Most diverse age distribution",
+            "Highest female percentage (73.6%)",
+            "Highest disability rate (40.1%)",
+            "Highest disability/veteran identification (43.9%)",
+            "Larger households: 3.8 members",
+            "Higher income: $1,524/month"
+        ]
+    },
+    "High": {
+        "size": "16.9%",
+        "visits": {"avg": 2.9, "range": "2.4-3.4"},
+        "demographics": {
+            "female": "70.5%",
+            "white": "34.4%",
+            "unknown": "25.3%",
+            "black": "17.8%",
+            "disability": "29.8%",
+            "disability_veteran": "36.2%"
+        },
+        "household": "3.5 members (13% above avg)",
+        "income": "$1,397 (10% above avg)",
+        "key_characteristics": [
+            "High visit frequency (2.9 visits/month)",
+            "Highest White/Anglo percentage (34.4%)",
+            "Above average disability/veteran identification (36.2%)",
+            "Larger households: 3.5 members",
+            "Higher income: $1,397/month"
+        ]
+    },
+    "Medium-High": {
+        "size": "16.8%",
+        "visits": {"avg": 2.2, "range": "1.9-2.4"},
+        "demographics": {
+            "female": "71.9%",
+            "white": "31.6%",
+            "unknown": "27.7%",
+            "black": "15.5%",
+            "disability": "30.3%",
+            "disability_veteran": "35.1%"
+        },
+        "household": "3.2 members (3% above avg)",
+        "income": "$1,334 (5% above avg)",
+        "key_characteristics": [
+            "Moderate-high visits (2.2 visits/month)",
+            "High female percentage (71.9%)",
+            "Average household size: 3.2 members",
+            "Slightly higher income: $1,334/month"
+        ]
+    },
+    "Medium-Low": {
+        "size": "16.5%",
+        "visits": {"avg": 1.7, "range": "1.6-1.9"},
+        "demographics": {
+            "female": "70.5%",
+            "white": "31.4%",
+            "unknown": "25.4%",
+            "black": "15.7%",
+            "disability": "30.1%",
+            "disability_veteran": "30.4%"
+        },
+        "household": "3.0 members (avg)",
+        "income": "$1,207 (5% below avg)",
+        "key_characteristics": [
+            "Moderate-low visits (1.7 visits/month)",
+            "Average household size: 3.0 members",
+            "Slightly lower income: $1,207/month"
+        ]
+    },
+    "Low": {
+        "size": "16.9%",
+        "visits": {"avg": 1.4, "range": "1.3-1.6"},
+        "demographics": {
+            "female": "68.3%",
+            "white": "30.6%",
+            "unknown": "23.5%",
+            "black": "15.8%",
+            "disability": "30.4%",
+            "disability_veteran": "30.6%"
+        },
+        "household": "2.8 members (10% below avg)",
+        "income": "$1,143 (10% below avg)",
+        "key_characteristics": [
+            "Low visits (1.4 visits/month)",
+            "Smaller households: 2.8 members",
+            "Lower income: $1,143/month"
+        ]
+    },
+    "Very Low": {
+        "size": "16.7%",
+        "visits": {"avg": 1.1, "range": "1.0-1.3"},
+        "demographics": {
+            "female": "67.9%",
+            "white": "25.4%",
+            "unknown": "26.8%",
+            "black": "18.4%",
+            "disability": "28.2%",
+            "disability_veteran": "26.9%"
+        },
+        "household": "2.5 members (19% below avg)",
+        "income": "$1,016 (20% below avg)",
+        "key_characteristics": [
+            "Lowest visits (1.1 visits/month)",
+            "Different ethnicity pattern",
+            "Highest \"no disability\" rate",
+            "Smallest households: 2.5 members",
+            "Lowest income: $1,016/month"
+        ]
     }
 }
 
@@ -261,55 +388,61 @@ AGENCIES = {
 @st.cache_resource
 def load_models():
     try:
-        kmeans_model = joblib.load("kmeans.pkl")
-        decision_tree_model = joblib.load("best_tree_model.pkl")
+        # Load KNN dictionary and extract components
+        knn_dict = joblib.load("knn_model.pkl")
+        knn_model = knn_dict["model"]
+        scaler = knn_dict["scaler"]
+        
+        # Load decision tree
+        decision_tree_model = joblib.load("the_best_tree_model.pkl")
+        
         st.success("Models loaded successfully!")
-        return kmeans_model, decision_tree_model
+        return knn_model, decision_tree_model, scaler
     except Exception as e:
         st.error(f"Error loading models: {str(e)}")
-        return None, None
+        return None, None, None
 
-def preprocess_data(input_dict):
+def preprocess_data(input_dict, scaler):
     """Preprocess the input data for model prediction"""
     # Create base DataFrame from input
     df = pd.DataFrame([input_dict])
     
-    # Ensure correct column order for clustering - using prev_visits for Avg Visits Per Month
-    clustering_columns = [
-        'Client Age', 
-        'Client Gender Identity-Labels',
-        'Client Ethnicity-Labels',
-        'Client Disability',
-        'Client Self-Identifies As',
-        'Household Size',
-        'Monthly Household Income',
-        'Visited Agency',
-        'Avg Visits Per Month'  # This will come from prev_visits
-    ]
-    clustering_data = df.copy()
-    clustering_data = clustering_data[clustering_columns]
+    # Define exact feature order and dtypes from your training data
+    feature_dtypes = {
+        'Client Age': 'float64',
+        'Client Gender Identity-Labels': 'int32',
+        'Client Ethnicity-Labels': 'int32',
+        'Client Disability': 'int32',
+        'Client Self-Identifies As': 'int32',
+        'Household Size': 'int64',
+        'Monthly Household Income': 'float64',
+        'Visited Agency': 'int32'
+    }
     
-    # Ensure correct column order for decision tree
-    dt_columns = [
-        'Client Age',
-        'Client Gender Identity-Labels',
-        'Client Ethnicity-Labels',
-        'Client Disability',
-        'Client Self-Identifies As',
-        'Household Size',
-        'Monthly Household Income',
-        'Visited Agency'
-    ]
-    decision_tree_data = df[dt_columns]
+    # Convert each column to the correct dtype
+    for col, dtype in feature_dtypes.items():
+        df[col] = df[col].astype(dtype)
     
-    return clustering_data, decision_tree_data
+    # Ensure columns are in correct order
+    input_data = df[feature_dtypes.keys()].copy()
+    
+    # Scale the data for KNN
+    knn_data_scaled = pd.DataFrame(
+        scaler.transform(input_data),
+        columns=input_data.columns
+    )
+    
+    # Use the same data (unscaled) for decision tree
+    decision_tree_data = input_data
+    
+    return knn_data_scaled, decision_tree_data
 
 def get_user_input():
     with st.form("prediction_form"):
         col1, col2 = st.columns(2)
         
         with col1:
-            age = st.number_input('Client Age', min_value=0, max_value=100, value=30, step=1)
+            age = st.number_input('Client Age', min_value=0.0, max_value=100.0, value=30.0, step=1.0)
             gender = st.selectbox('Client Gender Identity', 
                                 options=[k for k in GENDER_MAPPING.keys() if k not in ["Femalefemale", "Malemale"]])
             ethnicity = st.selectbox('Client Ethnicity', 
@@ -329,38 +462,180 @@ def get_user_input():
                                    min_value=0.0, value=2000.0, step=100.0)
             prev_visits = st.number_input('Number of Visits Last Month', 
                                         min_value=0.0, max_value=31.0, value=0.0, step=0.1,
-                                        help="Enter the average number of visits per month for clustering")
+                                        help="Enter the average number of visits per month")
         
         submitted = st.form_submit_button("Predict")
         
         if submitted:
             input_data = {
-                'Client Age': age,
-                'Client Gender Identity-Labels': GENDER_MAPPING[gender],
-                'Client Ethnicity-Labels': ETHNICITY_MAPPING[ethnicity],
-                'Client Disability': DISABILITY_MAPPING[disability],
-                'Client Self-Identifies As': SELF_IDENTIFIES_MAPPING[self_identifies],
-                'Household Size': household_size,
-                'Monthly Household Income': income,
-                'Visited Agency': AGENCIES[agency],
-                'Avg Visits Per Month': float(prev_visits)  # Include this directly in input_data
+                'Client Age': float(age),  # Ensure float64
+                'Client Gender Identity-Labels': int(GENDER_MAPPING[gender]),  # Ensure int32
+                'Client Ethnicity-Labels': int(ETHNICITY_MAPPING[ethnicity]),  # Ensure int32
+                'Client Disability': int(DISABILITY_MAPPING[disability]),  # Ensure int32
+                'Client Self-Identifies As': int(SELF_IDENTIFIES_MAPPING[self_identifies]),  # Ensure int32
+                'Household Size': int(household_size),  # Ensure int64
+                'Monthly Household Income': float(income),  # Ensure float64
+                'Visited Agency': int(AGENCIES[agency])  # Ensure int32
             }
             return submitted, input_data
         
         return False, None
 
+def determine_group(visits):
+    """Determine which group a client belongs to based on predicted visits"""
+    if visits >= 3.4:
+        return "Very High"
+    elif visits >= 2.4:
+        return "High"
+    elif visits >= 1.9:
+        return "Medium-High"
+    elif visits >= 1.6:
+        return "Medium-Low"
+    elif visits >= 1.3:
+        return "Low"
+    else:
+        return "Very Low"
+
+def display_group_info(visits):
+    """Display detailed group information based on predicted visits"""
+    group_name = determine_group(visits)
+    group_data = GROUP_INFO[group_name]
+    
+    st.markdown(f"""
+    ### Group Profile: {group_name}
+    
+    **Group Size:** {group_data['size']} of total clients  
+    **Visit Pattern:** Average {group_data['visits']['avg']} visits/month (range: {group_data['visits']['range']})
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Demographics")
+        demographics_df = pd.DataFrame({
+            'Metric': [
+                'Female',
+                'White/Anglo',
+                'Unknown Ethnicity',
+                'Black/African American',
+                'Disability',
+                'Disability/Veteran ID'
+            ],
+            'Percentage': [
+                group_data['demographics']['female'],
+                group_data['demographics']['white'],
+                group_data['demographics']['unknown'],
+                group_data['demographics']['black'],
+                group_data['demographics']['disability'],
+                group_data['demographics']['disability_veteran']
+            ]
+        })
+        st.dataframe(demographics_df, hide_index=True)
+    
+    with col2:
+        st.markdown("#### Household Characteristics")
+        household_df = pd.DataFrame({
+            'Characteristic': ['Household Size', 'Monthly Income'],
+            'Level': [group_data['household'], group_data['income']]
+        })
+        st.dataframe(household_df, hide_index=True)
+    
+    st.markdown("#### Key Characteristics")
+    for char in group_data['key_characteristics']:
+        st.markdown(f"• {char}")
+
+def display_predictions_and_analysis(knn_predicted_visits, dt_predicted_visits, group_name, group_data):
+    """Display all predictions and analysis in a clean, centered format"""
+    
+    # Success banner
+    st.markdown("""
+        <div style='background-color: #28a745; color: white; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 20px;'>
+            <h4 style='margin: 0;'>Prediction Complete!</h4>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Predictions section
+    st.markdown("""
+        <div style='text-align: center; margin-bottom: 30px;'>
+            <div style='display: inline-block; width: 45%; margin: 0 2%;'>
+                <h4>KNN Visit Prediction</h4>
+                <h2>{:.1f} visits per month</h2>
+                <p style='color: #666;'>(Based on similar clients)</p>
+            </div>
+            <div style='display: inline-block; width: 45%; margin: 0 2%;'>
+                <h4>Decision Tree Prediction</h4>
+                <h2>{:.1f} visits per month</h2>
+                <p style='color: #666;'>(Based on client characteristics)</p>
+            </div>
+        </div>
+    """.format(knn_predicted_visits, dt_predicted_visits), unsafe_allow_html=True)
+    
+    # Group Profile Header
+    st.markdown("""
+        <div style='text-align: center; margin-bottom: 30px;'>
+            <h3 style='color: #333; margin-bottom: 20px;'>Similar Clients Analysis</h3>
+            <h4 style='color: #444; margin-bottom: 15px;'>Group Profile: {}</h4>
+            <div style='margin-bottom: 10px;'>
+                <strong>Group Size:</strong> {} of total clients
+            </div>
+            <div style='margin-bottom: 20px;'>
+                <strong>Visit Pattern:</strong> Average {} visits/month (range: {})
+            </div>
+        </div>
+    """.format(
+        group_name,
+        group_data['size'],
+        group_data['visits']['avg'],
+        group_data['visits']['range']
+    ), unsafe_allow_html=True)
+    
+    # Demographics and Household Characteristics
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("<h4 style='text-align: center; color: #444;'>Demographics</h4>", unsafe_allow_html=True)
+        demographics_df = pd.DataFrame({
+            'Metric': [
+                'Female',
+                'White/Anglo',
+                'Unknown Ethnicity',
+                'Black/African American',
+                'Disability',
+                'Disability/Veteran ID'
+            ],
+            'Percentage': [
+                group_data['demographics']['female'],
+                group_data['demographics']['white'],
+                group_data['demographics']['unknown'],
+                group_data['demographics']['black'],
+                group_data['demographics']['disability'],
+                group_data['demographics']['disability_veteran']
+            ]
+        })
+        st.dataframe(demographics_df, hide_index=True, use_container_width=True)
+    
+    with col2:
+        st.markdown("<h4 style='text-align: center; color: #444;'>Household Characteristics</h4>", unsafe_allow_html=True)
+        household_df = pd.DataFrame({
+            'Characteristic': ['Household Size', 'Monthly Income'],
+            'Level': [group_data['household'], group_data['income']]
+        })
+        st.dataframe(household_df, hide_index=True, use_container_width=True)
+    
+    # Key Characteristics
+    st.markdown("<h4 style='text-align: center; color: #444; margin-top: 20px;'>Key Characteristics</h4>", unsafe_allow_html=True)
+    char_html = "<div style='text-align: center; margin-bottom: 20px;'>"
+    for char in group_data['key_characteristics']:
+        char_html += f"<p style='margin: 5px 0;'>• {char}</p>"
+    char_html += "</div>"
+    st.markdown(char_html, unsafe_allow_html=True)
+
 def main():
     st.title('Food Bank Visit Prediction')
     
-    # Clear any stored predictions if the page is refreshed
-    if 'cluster_prediction' in st.session_state:
-        del st.session_state['cluster_prediction']
-    if 'visit_prediction' in st.session_state:
-        del st.session_state['visit_prediction']
-    
-    # Load models
-    kmeans_model, decision_tree_model = load_models()
-    if not (kmeans_model and decision_tree_model):
+    # Load models and scaler
+    knn_model, decision_tree_model, scaler = load_models()
+    if not (knn_model and decision_tree_model and scaler):
         return
     
     # Get user input
@@ -368,125 +643,101 @@ def main():
     
     if submitted:
         try:
-            # Show raw input
-            #st.write("Raw input data:")
-            #st.write(input_data)
-            
             # Preprocess input data
-            clustering_data, decision_tree_data = preprocess_data(input_data)
+            knn_data, decision_tree_data = preprocess_data(input_data, scaler)
             
-            # Display processed input for verification
+            # Optional data verification expander
             with st.expander("View Processed Input Data"):
-                st.write("Clustering Data (includes Avg Visits Per Month):")
-                st.write(clustering_data)
-                st.write(f"Clustering shape: {clustering_data.shape}")
+                st.write("KNN Input Data (Scaled):")
+                st.write(knn_data)
                 st.write("\nDecision Tree Data:")
                 st.write(decision_tree_data)
-                st.write(f"Decision Tree shape: {decision_tree_data.shape}")
             
-           # Make predictions
+            # Make predictions
             with st.spinner('Making predictions...'):
-                # Get predictions and distances
-                distances = kmeans_model.transform(clustering_data)
-                cluster_prediction = kmeans_model.predict(clustering_data)
-                visit_prediction = decision_tree_model.predict(decision_tree_data)
+                # Get predictions
+                knn_predicted_visits = knn_model.predict(knn_data)[0]
+                dt_predicted_visits = decision_tree_model.predict(decision_tree_data)[0]
                 
-                # Display results with larger headers and full width
-                st.success("Prediction Complete!")
+                # Get nearest neighbors info for distance analysis
+                distances, indices = knn_model.kneighbors(knn_data)
                 
-                # Get cluster info
-                cluster_info = CLUSTER_DESCRIPTIONS[cluster_prediction[0]]
+                # Get group information
+                group_name = determine_group(knn_predicted_visits)
+                group_data = GROUP_INFO[group_name]
                 
-                # Header row with larger text and better spacing
-                st.markdown(f"""
-                <div style='padding: 1em 0; text-align: center;'>
-                    <h2>Predicted Cluster {cluster_prediction[0]}</h2>
-                    <h3>{cluster_info['title']}</h3>
-                </div>
+                # Display main predictions and analysis
+                display_predictions_and_analysis(
+                    knn_predicted_visits,
+                    dt_predicted_visits,
+                    group_name,
+                    group_data
+                )
+                
+                # Additional Analysis Section
+                st.markdown("<hr style='margin: 30px 0;'>", unsafe_allow_html=True)
+                st.markdown("""
+                    <div style='text-align: center; margin-bottom: 20px;'>
+                        <h3>Detailed Analysis</h3>
+                    </div>
                 """, unsafe_allow_html=True)
                 
-                # Metrics in columns with larger headers
+                # Distance Analysis
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.markdown("### Cluster Assignment")
-                    st.write(f"This client matches characteristics of Cluster {cluster_prediction[0]}")
+                    st.markdown("<h4 style='text-align: center;'>Distance Metrics</h4>", 
+                              unsafe_allow_html=True)
+                    neighbors_df = pd.DataFrame({
+                        'Neighbor': range(1, len(distances[0]) + 1),
+                        'Distance': [f"{d:.3f}" for d in distances[0]]
+                    })
+                    st.dataframe(neighbors_df.head(),
+                               hide_index=True,
+                               use_container_width=True)
+                
                 with col2:
-                    st.markdown("### Visit Prediction")
-                    st.markdown(f"#### {visit_prediction[0]:.1f} visits per month")
-                
-                # Display cluster characteristics
-                st.write("### Cluster Profile")
-                profile_col1, profile_col2 = st.columns(2)
-                
-                with profile_col1:
-                    st.write("**Cluster Characteristics:**")
-                    characteristics = pd.DataFrame({
-                        'Metric': ['Average Age', 'Predominant Gender', 'Typical Ethnicity', 'Average Household Size'],
+                    st.markdown("<h4 style='text-align: center;'>Statistical Summary</h4>", 
+                              unsafe_allow_html=True)
+                    similarity_stats = pd.DataFrame({
+                        'Metric': ['Closest Match', 'Average Distance', 'Furthest Match'],
                         'Value': [
-                            f"{cluster_info['avg_age']:.1f}",
-                            cluster_info['gender'],
-                            cluster_info['ethnicity'],
-                            f"{cluster_info['household_size']:.1f}"
+                            f"{np.min(distances[0]):.3f}",
+                            f"{np.mean(distances[0]):.3f}",
+                            f"{np.max(distances[0]):.3f}"
                         ]
                     })
-                    st.dataframe(characteristics, hide_index=True, width=None)  # width=None allows full width
+                    st.dataframe(similarity_stats,
+                               hide_index=True,
+                               use_container_width=True)
                 
-                with profile_col2:
-                    st.write("**Key Metrics:**")
-                    metrics = pd.DataFrame({
-                        'Metric': ['Monthly Income', 'Typical Visits/Month', 'Disability Rate'],
-                        'Value': [
-                            cluster_info['income'],
-                            f"{cluster_info['visits']:.2f}",
-                            f"{cluster_info['disability']:.2f}"
-                        ]
-                    })
-                    st.dataframe(metrics, hide_index=True, width=None)  # width=None allows full width
+                # Feature Analysis
+                with st.expander("View Feature Analysis"):
+                    st.markdown("<h4 style='text-align: center;'>Feature Details</h4>", 
+                              unsafe_allow_html=True)
+                    
+                    # Create feature comparison
+                    feature_diff_df = pd.DataFrame({
+                        'Feature': knn_data.columns,
+                        'Scaled Value': [f"{v:.3f}" for v in knn_data.iloc[0].values],
+                        'Original Value': decision_tree_data.iloc[0].values
+                    }).sort_values('Feature')
+                    
+                    st.dataframe(feature_diff_df,
+                               hide_index=True,
+                               use_container_width=True)
                 
-                st.markdown(f"""
-                <div style='padding: 1em; background-color: #f0f2f6; border-radius: 5px;'>
-                    <strong>Key Observations:</strong> {cluster_info['key_obs']}
-                </div>
+                # Optional: Add explanatory note at the bottom
+                st.markdown("""
+                    <div style='text-align: center; margin-top: 30px; padding: 10px; 
+                              background-color: #f8f9fa; border-radius: 5px;'>
+                        <p style='color: #666; margin: 0;'>
+                            Predictions are based on historical patterns and similar client profiles. 
+                            Actual visit patterns may vary.
+                        </p>
+                    </div>
                 """, unsafe_allow_html=True)
                 
-                             # Continue with your existing feature influence analysis...
-                st.write("### Detailed Analysis")
-                
-                # Create analysis DataFrames
-                comparison_df = pd.DataFrame({
-                    'Feature': clustering_data.columns,
-                    'Current Value': clustering_data.iloc[0].values,
-                    'Cluster Center': kmeans_model.cluster_centers_[cluster_prediction[0]],
-                    'Difference': abs(clustering_data.iloc[0].values - kmeans_model.cluster_centers_[cluster_prediction[0]])
-                })
-                comparison_df = comparison_df.sort_values('Difference', ascending=False)
-                
-                distances_df = pd.DataFrame({
-                    'Cluster': range(len(distances[0])),
-                    'Distance': distances[0],
-                    'Relative Distance': distances[0] / np.min(distances[0])
-                })
-                
-                # Display analysis side by side
-                st.write("### Cluster Analysis")
-                col3, col4 = st.columns(2)
-                
-                with col3:
-                    st.write("**Most Influential Features:**")
-                    st.dataframe(comparison_df[['Feature', 'Difference']].head(),
-                               hide_index=True)
-                
-                with col4:
-                    st.write("**Distances to Clusters:**")
-                    st.dataframe(distances_df.style.highlight_min('Distance'),
-                               hide_index=True)
-                
-                # Show detailed comparison in expandable section
-                with st.expander("View Detailed Feature Comparison"):
-                    st.dataframe(comparison_df[['Feature', 'Current Value', 'Cluster Center', 'Difference']],
-                               hide_index=True)
-            
-                        
         except Exception as e:
             st.error(f"An error occurred during prediction: {str(e)}")
             st.write("Debug info:", e.__class__.__name__)
